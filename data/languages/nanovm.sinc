@@ -1,0 +1,263 @@
+# sleigh include file for Skeleton language instructions
+
+# 6.1 Defining Tokens and Fields
+define token base (16)
+	# 5 4 3210 98 76543210
+	# t s xxxx yy yyyyyyyy
+	isCnd   = (15, 15)
+	isJmp   = (14, 14)
+	jmpType = (10, 13)
+	jmpOp   = (0,   9) signed
+
+	# If not jump
+	specType = (12, 14)
+	specReg  = (8, 11)
+	specImm  = (0, 7)
+
+	# 5 4321098 7654 3210
+	# t ooooooo rrrr ssss
+	op0  = (8, 15)
+	reg1 = (4, 7)
+	reg2 = (0, 3)
+;
+
+attach variables [ reg1 reg2 specReg ] [
+	r0 r1 r2 r3 r4 r5 r6 r7 r8 r9 r10 r11 r12 r13 r14 r15
+];
+
+# Define memory arguments
+define token tok_imm16(16)
+	imm16  = (0, 15)
+	simm16 = (0, 15) signed
+;
+
+define token tok_imm32(32)
+	imm32  = (0, 31)
+	simm32 = (0, 31) signed
+;
+
+# Registers
+rr1: [reg1] is reg1 { export *:4 reg1; }
+rr2: [reg2] is reg2 { export *:4 reg2; }
+
+# Registers + memory
+r1m16: [reg1 + simm16] is reg1 ; simm16 { local t = reg1 + simm16; export *:4 t; }
+r2m16: [reg2 + simm16] is reg2 ; simm16 { local t = reg2 + simm16; export *:4 t; }
+r1m32: [reg1 + simm32] is reg1 ; simm32 { local t = reg1 + simm32; export *:4 t; }
+r2m32: [reg2 + simm32] is reg2 ; simm32 { local t = reg2 + simm32; export *:4 t; }
+
+
+# :JCC cndrel is isCnd = 1 & cndrel unimpl
+with: isCnd = 1 & isJmp = 1 {
+
+	# Conditional jump reloc
+	cndrel: reloc is jmpOp [ reloc = inst_next + jmpOp * 2; ] {
+		export *:4 reloc;
+	}
+
+	:JEQ cndrel is jmpType = 0 & cndrel {
+		if($(EQ_flag))
+			goto cndrel;
+	}
+
+	:JNE cndrel is jmpType = 1 & cndrel {
+		if(!$(EQ_flag))
+			goto cndrel;
+	}
+
+	# Signed
+	:JLT cndrel is jmpType = 2 & cndrel {
+		if($(GS_flag))
+			goto cndrel;
+	}
+
+	:JGT cndrel is jmpType = 3 & cndrel {
+		if($(LS_flag))
+			goto cndrel;
+	}
+
+	# Unsigned
+	:JBT cndrel is jmpType = 4 & cndrel {
+		if($(GU_flag))
+			goto cndrel;
+	}
+
+	:JAT cndrel is jmpType = 5 & cndrel {
+		if($(LU_flag))
+			goto cndrel;
+	}
+
+	# Signed
+	:JLE cndrel is jmpType = 6 & cndrel {
+		if($(EQ_flag) || $(LS_flag))
+			goto cndrel;
+	}
+
+	:JGE cndrel is jmpType = 7 & cndrel {
+		if($(EQ_flag) || $(GS_flag))
+			goto cndrel;
+	}
+
+	# Unsigned
+	:JBE cndrel is jmpType = 8 & cndrel {
+		if($(EQ_flag) || $(LU_flag))
+			goto cndrel;
+	}
+
+	:JAE cndrel is jmpType = 9 & cndrel {
+		if($(EQ_flag) || $(GU_flag))
+			goto cndrel;
+	}
+}
+
+# What makes this special ? I do not know
+with: isCnd = 1 & isJmp = 0 {
+	:SADD specReg, specImm is specType = 0 & specReg & specImm {
+		specReg = specReg + specImm;
+	}
+
+	:SSUB specReg, specImm is specType = 1 & specReg & specImm {
+		specReg = specReg - specImm;
+	}
+
+	# NOT GOOD
+	#:GETSPR specReg, specImm is specType = 2 & specReg & specImm unimpl
+	# {
+	# 	specReg = specImm;
+	# }
+
+	:EXIT is specType = 3 {
+		goto inst_start;
+	}
+}
+
+:MOV reg1, imm32 is op0 = 0x01 & reg1 ; imm32 {
+	reg1 = imm32;
+}
+
+:MOV reg1, reg2 is op0 = 0x02 & reg1 & reg2 {
+	reg1 = reg2;
+}
+
+:RET is op0 = 0x04 {
+	local tmp = r0 + 4;
+	local ret = *:4 tmp;
+
+	r1 = r0 + 0x0C;
+	r0 = *r0;
+
+	return [ret];
+#	goto ret;
+}
+
+:ADD reg1, reg2 is op0 = 0x05 & reg1 & reg2 {
+	reg1 = reg1 + reg2;
+}
+
+:PUSH reg1, reg2 is op0 = 0x06 & reg1 & reg2 {
+	*reg1 = reg2;
+	reg1 = reg1 - 4;
+}
+
+:POP reg1, reg2 is op0 = 0x07 & reg1 & reg2 {
+	reg2 = *reg1;
+	reg1 = reg1 + 4;
+}
+
+:MOV reg1, rr2 is op0 = 0x0A & reg1 & rr2 {
+	reg1 = rr2;
+}
+
+:MOV reg1, r2m16 is op0 = 0x0C ... & reg1 ... & r2m16 {
+	reg1 = r2m16;
+}
+
+# ... is confusing. It works for *each* clause (like the unary -)
+# It should be read as (op0 = 0x0D ...) & (reg2 ...) & rm16
+:MOV r1m16, reg2 is op0 = 0x0D ... & reg2 ... & r1m16 {
+	r1m16 = reg2;
+}
+
+:CMP reg1, reg2 is op0 = 0x0E & reg1 & reg2 {
+	$(LS_flag) = reg2 s< reg1; # LS: Lesser (signed)
+	$(GS_flag) = reg2 s> reg1; # LU: Greater (signed)
+	$(EQ_flag) = reg2 == reg1; # EQ: Equal
+	$(LU_flag) = reg2  < reg1; # LU: Lesser (unsigned)
+	$(GU_flag) = reg2  > reg1; # GU: Greater (unsigned)
+}
+
+:NOP is op0 = 0x0F {
+#	goto inst_start;
+}
+
+# Unused
+:MOVBS reg1, reg2 is op0 = 0x10 & reg1 & reg2 {
+	r1 = sext(r2:1);
+}
+
+:MOVB reg1, reg2 is op0 = 0x12 & reg1 & reg2 {
+	r1 = zext(r2:1);
+}
+
+ptr32: imm32 is imm32 { export *:4 imm32; }
+:JMP ptr32 is op0 = 0x1A ; ptr32 {
+	goto ptr32;
+}
+
+# Not actually read ; needs more RE
+:INB reg1, reg2 is op0 = 0x1C & reg1 & reg2 {
+	reg1 = readb(reg2);
+}
+
+:OUTB reg1, reg2 is op0 = 0x1E & reg1 & reg2 {
+	outb(reg1, reg2);
+}
+
+:INB reg1, reg2, simm16 is op0 = 0x36 & reg1 & reg2 ; simm16 {
+	local tmp = reg2 + simm16;
+	reg1 = readb(*:4 tmp);
+}
+
+# :JMP [reg1], is op0 = 0x25 {
+# 	goto *reg1;
+# }
+
+:AND reg1, reg2 is op0 = 0x26 & reg1 & reg2 {
+	reg1 = reg1 & reg2;
+}
+
+:SHR reg1, reg2 is op0 = 0x27 & reg1 & reg2 {
+	reg1 = reg1 >> reg2;
+}
+
+:SHL reg1, reg2 is op0 = 0x28 & reg1 & reg2 {
+	reg1 = reg1 << reg2;
+}
+
+:SUB reg1, reg2 is op0 = 0x29 & reg1 & reg2 {
+	reg1 = reg1 - reg2;
+}
+
+:NEG reg1, reg2 is op0 = 0x2A & reg1 & reg2 {
+	reg1 = -reg2;
+}
+
+:OR reg1, reg2 is op0 = 0x2B & reg1 & reg2 {
+	reg1 = reg1 | reg2;
+}
+
+:NOT reg1, reg2 is op0 = 0x2C & reg1 & reg2 {
+	reg1 = ~reg2;
+}
+
+:SHL reg1, reg2 is op0 = 0x2D & reg1 & reg2 {
+	reg1 = reg1 s>> reg2;
+}
+
+:XOR reg1, reg2 is op0 = 0x2E & reg1 & reg2 {
+	reg1 = reg1 ^ reg2;
+}
+
+:MUL reg1, reg2 is op0 = 0x2F & reg1 & reg2 {
+	reg1 = reg1 * reg2;
+}

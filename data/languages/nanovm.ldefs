@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- See Relax specification: Ghidra/Framework/SoftwareModeling/data/languages/language_definitions.rxg -->
+
+<language_definitions>
+<!-- Uncomment the following to make the language available in Ghidra -->
+   <language processor="nanovm"
+            endian="little"
+            size="16"
+            variant="default"
+            version="1.0"
+            slafile="nanovm.sla"
+            processorspec="nanovm.pspec"
+            id="nanovm:LE:16:default">
+    <description>NanoVM Language Module</description>
+    <compiler name="default" spec="nanovm.cspec" id="default"/>
+  </language>
+</language_definitions>
